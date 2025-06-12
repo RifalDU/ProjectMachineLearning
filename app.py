@@ -2,7 +2,6 @@ import streamlit as st
 import pickle
 import re
 import string
-
 # Import NLTK dan download stopwords jika belum ada
 import nltk
 from nltk.corpus import stopwords
