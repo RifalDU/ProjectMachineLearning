@@ -1,50 +1,103 @@
+# app.py
 import streamlit as st
-import pickle
+import pandas as pd
+import numpy as np
 import re
-import string
-# Import NLTK dan download stopwords jika belum ada
-import nltk
-from nltk.corpus import stopwords
+from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Cek dan download stopwords hanya jika belum ada
-try:
-    stopwords.words('indonesian')
-except LookupError:
-    nltk.download('stopwords')
-
-# Load model dan vectorizer
-with open('model_nb.pkl', 'rb') as f:
-    model = pickle.load(f)
-with open('tfidf_vectorizer.pkl', 'rb') as f:
-    tfidf = pickle.load(f)
-
-stopwords_ind = set(stopwords.words('indonesian'))
-
-def clean_text(text):
-    # Lowercase
+# Preprocessing function
+def preprocess_text(text):
+    # Case folding
     text = text.lower()
-    # Remove numbers
-    text = re.sub(r'\d+', '', text)
-    # Remove punctuation
-    text = text.translate(str.maketrans('', '', string.punctuation))
+    # Remove non-alphabetic characters
+    text = re.sub(r'[^a-zA-Z\s]', ' ', text)
     # Remove extra spaces
-    text = text.strip()
-    # Remove stopwords
+    text = re.sub(r'\s+', ' ', text).strip()
+    # Tokenization
     tokens = text.split()
-    tokens = [word for word in tokens if word not in stopwords_ind]
+    # Stopword removal (contoh sederhana, bisa diganti list lebih lengkap)
+    stopwords = set([
+        'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'dengan', 'pada', 'ini', 'itu', 'karena', 'jika', 'ada', 'tidak', 'sudah'
+    ])
+    tokens = [word for word in tokens if word not in stopwords]
+    # Stemming
+    factory = StemmerFactory()
+    stemmer = factory.create_stemmer()
+    tokens = [stemmer.stem(word) for word in tokens]
     return ' '.join(tokens)
 
 # Streamlit UI
-st.title("Klasifikasi Sentimen Ulasan E-Commerce")
-st.write("Masukkan ulasan produk dari e-commerce, lalu klik Prediksi untuk mengetahui sentimennya.")
+st.title('Klasifikasi Sentimen Ulasan E-Commerce (Naive Bayes)')
+st.write('Upload file CSV (kolom: text, sentiment) untuk memulai.')
 
-user_input = st.text_area("Tulis ulasan di sini:")
+uploaded_file = st.file_uploader("Upload dataset CSV", type="csv")
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    st.write("Contoh data:")
+    st.dataframe(df.head())
 
-if st.button("Prediksi Sentimen"):
-    if user_input.strip() == "":
-        st.warning("Silakan masukkan teks ulasan terlebih dahulu.")
-    else:
-        clean_review = clean_text(user_input)
-        X_input = tfidf.transform([clean_review])
-        prediction = model.predict(X_input)[0]
-        st.success(f"Sentimen ulasan: **{prediction.capitalize()}**")
+    # Preprocessing
+    st.subheader("Preprocessing Data")
+    df['clean_text'] = df['text'].astype(str).apply(preprocess_text)
+    st.dataframe(df[['text', 'clean_text', 'sentiment']].head())
+
+    # Split data
+    X = df['clean_text']
+    y = df['sentiment']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # TF-IDF Feature Extraction
+    vectorizer = TfidfVectorizer(max_features=2000)
+    X_train_vec = vectorizer.fit_transform(X_train)
+    X_test_vec = vectorizer.transform(X_test)
+
+    # Model Training
+    model = MultinomialNB()
+    model.fit(X_train_vec, y_train)
+    y_pred = model.predict(X_test_vec)
+
+    # Evaluation
+    acc = accuracy_score(y_test, y_pred)
+    st.subheader("Evaluasi Model")
+    st.write(f"**Akurasi:** {acc:.2f}")
+
+    # Confusion Matrix
+    cm = confusion_matrix(y_test, y_pred)
+    fig, ax = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Negatif','Positif'], yticklabels=['Negatif','Positif'], ax=ax)
+    plt.xlabel('Prediksi')
+    plt.ylabel('Aktual')
+    st.pyplot(fig)
+
+    # Classification Report
+    st.text("Classification Report:")
+    st.text(classification_report(y_test, y_pred, target_names=['Negatif', 'Positif']))
+
+    # Visualisasi distribusi label
+    st.subheader("Distribusi Sentimen")
+    fig2, ax2 = plt.subplots()
+    df['sentiment'].value_counts().plot(kind='bar', ax=ax2)
+    plt.xticks(rotation=0)
+    st.pyplot(fig2)
+
+    # Prediksi real-time
+    st.subheader("Prediksi Sentimen Ulasan Baru")
+    user_input = st.text_area("Masukkan ulasan e-commerce di sini:")
+    if st.button("Prediksi Sentimen"):
+        if user_input.strip() != "":
+            clean_input = preprocess_text(user_input)
+            input_vec = vectorizer.transform([clean_input])
+            pred = model.predict(input_vec)[0]
+            label = "Positif" if int(pred) == 1 else "Negatif"
+            st.success(f"Sentimen prediksi: **{label}**")
+        else:
+            st.warning("Silakan masukkan teks ulasan terlebih dahulu.")
+
+else:
+    st.info("Silakan upload file dataset CSV dengan kolom 'text' dan 'sentiment'.")
