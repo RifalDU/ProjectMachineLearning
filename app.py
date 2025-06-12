@@ -53,11 +53,14 @@ uploaded_file = st.file_uploader("Upload file dataset (.csv atau .xlsx)", type=[
 
 if uploaded_file is not None:
     if uploaded_file.name.endswith('.csv'):
-        df = pd.read_csv(uploaded_file)
+        try:
+            df = pd.read_csv(uploaded_file, encoding='utf-8')
+        except UnicodeDecodeError:
+            df = pd.read_csv(uploaded_file, encoding='latin1')
     else:
         df = pd.read_excel(uploaded_file)
     st.success(f"File `{uploaded_file.name}` berhasil diupload!")
-    
+
     # --- Data Preview ---
     with st.expander("Lihat Sampel Data"):
         st.dataframe(df.head(10), use_container_width=True)
